@@ -1,0 +1,5 @@
+#!/bin/bash
+
+. /root/demo-openrc.sh
+echo -e  'y\n'|ssh-keygen -q -t rsa -N "" -f /root/.ssh/id_rsa
+openstack keypair create --public-key /root/.ssh/id_rsa.pub mykey

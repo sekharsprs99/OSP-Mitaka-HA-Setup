@@ -1,0 +1,7 @@
+---
+# handlers file for common
+  - name: Restart chrony
+    service: name=chrony state=restarted
+
+  - name: reboot
+    command: /sbin/reboot

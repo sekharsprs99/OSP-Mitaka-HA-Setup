@@ -1,0 +1,140 @@
+---
+# tasks file for controller-glance
+  - name: Create database for glance
+    mysql_db: login_user=root login_password="{{ mysql_root_password }}" name=glance state=present
+    when: ansible_hostname == controller01
+    tags: glance-db
+
+  - name: Create glance user and grant privileges to glance database.
+    mysql_user: login_user=root login_password="{{ mysql_root_password }}" name=glance password={{ glance_dbpass }} priv=*.*:ALL state=present host={{ item }}
+    with_items:
+     - "{{ controller01 }}"
+     - "{{ controller01_eth0 }}"
+     - "{{ controller01_eth1 }}"
+     - "{{ controller02 }}"
+     - "{{ controller02_eth0 }}"
+     - "{{ controller02_eth1 }}"
+     - "{{ controller03 }}"
+     - "{{ controller03_eth0 }}"
+     - "{{ controller03_eth1 }}"
+     - "{{ compute01 }}"
+     - "{{ compute01_eth0 }}"
+     - "{{ compute01_eth1 }}"
+     - "{{ internal_vip }}"
+     - "{{ internal_vip_fqdn }}"
+     - "{{ public_vip_fqdn }}"
+     - "{{ public_vip }}"
+     - 127.0.0.1
+     - localhost
+     - "%"
+    when: ansible_hostname == controller01
+    tags: glance-db-priv
+
+  - name: Install glance and python-glanceclient on controller node
+    apt: name=glance state=present force=yes
+    tags: glance-package
+
+  - name: Removing sqlite_db in glance-api.conf
+    lineinfile: dest=/etc/glance/glance-api.conf regexp='^sqlite_db' state=absent
+    tags: glance-sqlite-db-absent
+
+  - name: Removing sqlite_db in glance-registry.conf
+    lineinfile: dest=/etc/glance/glance-registry.conf regexp='^sqlite_db' state=absent
+    tags: glance-sqlite-db-absent
+
+  - name: Configuring components in glance-api.conf on Controller nodes
+    ini_file: dest=/etc/glance/glance-api.conf
+              section="{{ item.section }}"
+              option="{{ item.option }}"
+              value="{{ item.value }}"
+    with_items:
+      - { section: 'DEFAULT', option: 'bind_port', value: "9291" }
+      - { section: 'DEFAULT', option: 'registry_port', value: "9192" }
+      - { section: 'database', option: 'connection', value: "mysql+pymysql://glance:{{ glance_dbpass }}@{{ internal_vip_fqdn }}/glance" }
+      - { section: 'keystone_authtoken', option: 'auth_uri', value: "http://{{ public_vip_fqdn }}:5000" }
+      - { section: 'keystone_authtoken', option: 'auth_url', value: "http://{{ internal_vip_fqdn }}:35357" }
+      - { section: 'keystone_authtoken', option: 'memcached_servers', value: "{% for host in groups['controller_nodes'] %}{{ hostvars[host]['ansible_fqdn' ] }}:{{ memcached_port }}{% if not loop.last %},{% endif %}{% endfor %}" }
+      - { section: 'keystone_authtoken', option: 'auth_type', value: 'password' }
+      - { section: 'keystone_authtoken', option: 'project_domain_name', value: 'default' }
+      - { section: 'keystone_authtoken', option: 'user_domain_name', value: 'default' }
+      - { section: 'keystone_authtoken', option: 'project_name', value: 'service' }
+      - { section: 'keystone_authtoken', option: 'username', value: 'glance' }
+      - { section: 'keystone_authtoken', option: 'password', value: "{{ glance_user_pass }}" }
+      - { section: 'paste_deploy', option: 'flavor', value: 'keystone' }
+      - { section: 'glance_store', option: 'stores', value: "file,http" }
+      - { section: 'glance_store', option: 'default_store', value: 'file' }
+      - { section: 'glance_store', option: 'filesystem_store_datadir', value: "/var/lib/glance/images/" }
+    tags: glance-api-conf
+
+  - name: Configuring components in glance-registry.conf on Controller nodes
+    ini_file: dest=/etc/glance/glance-registry.conf
+              section="{{ item.section }}"
+              option="{{ item.option }}"
+              value="{{ item.value}}"
+    with_items:
+      - { section: 'DEFAULT', option: 'bind_port', value: "9291" }
+      - { section: 'DEFAULT', option: 'registry_port', value: "9192" }
+      - { section: 'database', option: 'connection', value: "mysql+pymysql://glance:{{ glance_dbpass }}@{{ internal_vip_fqdn }}/glance" }
+      - { section: 'keystone_authtoken', option: 'auth_uri', value: "http://{{ public_vip_fqdn }}:5000" }
+      - { section: 'keystone_authtoken', option: 'auth_url', value: "http://{{ internal_vip_fqdn }}:35357" }
+      - { section: 'keystone_authtoken', option: 'memcached_servers', value: "{% for host in groups['controller_nodes'] %}{{ hostvars[host]['ansible_fqdn' ] }}:{{ memcached_port }}{% if not loop.last %},{% endif %}{% endfor %}" }
+      - { section: 'keystone_authtoken', option: 'auth_type', value: 'password' }
+      - { section: 'keystone_authtoken', option: 'project_domain_name', value: 'default' }
+      - { section: 'keystone_authtoken', option: 'user_domain_name', value: 'default' }
+      - { section: 'keystone_authtoken', option: 'project_name', value: 'service' }
+      - { section: 'keystone_authtoken', option: 'username', value: 'glance' }
+      - { section: 'keystone_authtoken', option: 'password', value: "{{ glance_user_pass }}" }
+      - { section: 'paste_deploy', option: 'flavor', value: 'keystone' }
+    tags: glance-registry-conf
+
+  - name: Populate the Image service database in controller01
+    shell: /bin/sh -c "glance-manage db_sync" glance
+    when: ansible_hostname == controller01
+    tags: glance-pop-db
+
+  - name: Populate the Image service database in controller02_03
+    shell: /bin/sh -c "glance-manage db_sync" glance
+    when: ansible_hostname != controller01
+    tags: glance-pop-db
+
+  - name: Restart Glance-Registry
+    service: name={{ item }} state=restarted
+    with_items:
+      - glance-registry
+      - glance-api
+    tags: glance-restart
+
+  - name: Remove /var/lib/glance/glance.sqlite
+    file: path=/var/lib/glance/glance.sqlite state=absent
+    tags: glance-sqlite-rm
+
+  - name: Upload image
+    template: src=image.sh.j2 dest=/var/tmp/image.sh
+    tags: glance-image-upload
+
+  - name: create image
+    shell: bash /var/tmp/image.sh chdir=/var/tmp/
+    environment:
+      OS_PROJECT_DOMAIN_NAME: default
+      OS_USER_DOMAIN_NAME: default
+      OS_PROJECT_NAME: admin
+      OS_USERNAME: admin
+      OS_PASSWORD: "{{ admin_user_pass }}"
+      OS_AUTH_URL: http://{{ internal_vip_fqdn }}:35357/v3
+      OS_IDENTITY_API_VERSION: 3
+      OS_IMAGE_API_VERSION: 2
+    when: ansible_hostname == controller01
+    ignore_errors: yes
+    tags: glance-create-image
+
+  - name: Adding Glance-api resource agent
+    shell: "{{ item }}"
+    with_items:
+      - crm configure primitive p_glance-api ocf:openstack:glance-api params config="/etc/glance/glance-api.conf" os_password="{{ admin_user_pass }}" os_username="admin" os_tenant_name="admin" os_auth_url="http://{{ internal_vip_fqdn }}:5000/v2.0/" op monitor interval="15s" timeout="30s"
+      - crm configure clone clone_p_glance-api p_glance-api
+    when: ansible_hostname == controller01
+    ignore_errors: yes
+    tags: glance-ra
+
+#  - name: Add p_glance_registry resource
+#    shell: crm configure primitive p_glance_registry ocf:openstack:glance-registry params config="/etc/glance/glance-registry.conf" os_auth_url="http://{{ internal_vip_fqdn }}:5000/v2.0/" os_password="{{ admin_user_pass }}" os_tenant_name="admin" os_username="admin" user="glance" op monitor interval="15s" timeout="30s"

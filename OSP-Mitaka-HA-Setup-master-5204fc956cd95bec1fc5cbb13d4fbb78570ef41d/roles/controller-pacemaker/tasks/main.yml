@@ -1,0 +1,145 @@
+---
+# tasks file for controller-pacemaker
+  - name: Install pacemaker and corosync packages
+    apt: name=pacemaker state=present force=yes
+    tags: pacemaker-install
+
+  - name: Install haveged packages to generate authkey for cluster formation
+    apt: name=haveged state=present force=yes
+    when: ansible_hostname == controller01
+    tags: pacemaker-install
+
+  - name: Create authentication key for cluster
+    command: corosync-keygen
+    when: ansible_hostname == controller01
+    tags: pacemaker-authgen
+
+  - name: Removing haveged package
+    apt: name=haveged state=absent purge=yes
+    tags: pacemaker-haveged_purge
+
+  - name: Copy authkey to cluster nodes
+    synchronize: src=/etc/corosync/authkey dest=/etc/corosync/authkey perms=yes
+    delegate_to: "{{ controller01_eth0 }}"
+    tags: pacemaker-authcp
+
+  - name: Update corosync conf
+    lineinfile: dest=/etc/corosync/corosync.conf
+                regexp="bindnetaddr:"
+                line="                bindnetaddr{{':'}} {{ hostvars[groups['controller_nodes'][0]]['ansible_' + mgmt_iface ]['ipv4']['network'] }}"
+                backrefs=yes
+    tags: corosync-conf
+
+  - name: Updating corosync conf
+    replace: dest=/etc/corosync/corosync.conf
+             regexp='expected_votes{{':'}} 1'
+             replace='expected_votes{{':'}} 2'
+    tags: pcmk_exp
+
+  - name: Updating corosync conf
+    lineinfile: dest=/etc/corosync/corosync.conf
+                regexp='{{ item }}'
+                insertafter="expected_votes"
+                line='{{ item }}'
+    with_items:
+      - '        two_node: 1'
+    tags: corosync_conf
+
+  - name: Copying pcmk file
+    copy: src=pcmk dest=/etc/corosync/service.d/pcmk
+    tags: pcmk_file
+
+  - name: Configure /etc/default/corosync START option
+    lineinfile: dest=/etc/default/corosync regexp=^START line=START=yes
+    tags: corosync_start_conf
+
+  - name: Start corosync service
+    service: name=corosync state=started
+    tags: corosync_start
+
+  - name: enable Pacemaker to start on system boot
+    shell: /usr/sbin/update-rc.d pacemaker start 20 2 3 4 5 . stop 00 0 1 6 .
+    tags: pacemaker_enable
+
+  - name: start pacemaker service
+    service: name=pacemaker state=started
+    tags: pacemaker_start
+
+  - name: Set basic cluster properties
+    shell: crm configure property pe-warn-series-max="1000" pe-input-series-max="1000" pe-error-series-max="1000" cluster-recheck-interval="5min"
+    when: ansible_hostname == controller01
+    tags: pacemaker_cluster_pro
+
+  - name: Disable stonith on master server
+    command: crm configure property stonith-enabled=false
+    when: ansible_hostname == controller01
+    tags: pacemaker_disable_stonith
+
+  - name: OpenStack Resource Agents directory
+    file: path=/usr/lib/ocf/resource.d/{{ item }} state=directory
+    with_items:
+      - openstack
+      - percona
+    tags: pcmkra_dir
+
+  - name: Downloading OpenStack Resource agents
+    get_url:
+      url: "{{ item }}"
+      dest: /usr/lib/ocf/resource.d/openstack
+      mode: 0755
+    with_items:
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/NovaCompute
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/NovaEvacuate
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/ceilometer-agent-central
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/cinder-api
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/cinder-schedule
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/cinder-volume
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/glance-api
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/glance-registry
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/heat-engine
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/keystone
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/manila-api
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/neutron-agent-dhcp
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/neutron-agent-l3
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/neutron-ha-tool
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/neutron-metadata-agent
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/neutron-server
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/nova-api
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/nova-cert
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/nova-compute-wait
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/nova-consoleauth
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/nova-network
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/nova-novnc
+      - https://git.openstack.org/cgit/openstack/openstack-resource-agents/plain/ocf/nova-scheduler
+    tags: openstack_ra_download
+
+  - name: Download Percona Resource Agent
+    get_url: url=https://github.com/percona/percona-pacemaker-agents/raw/master/agents/mysql_prm
+             dest=/usr/lib/ocf/resource.d/percona/mysql
+             mode=0755
+    tags: percona_ra_download
+
+  - name: Download HA Proxy Resource Agent
+    get_url: url=https://raw.githubusercontent.com/thisismitch/cluster-agents/master/haproxy
+             dest=/usr/lib/ocf/resource.d/heartbeat
+             mode=0755
+    tags: haproxy_ra_download
+
+#Resource Agents for VIPs
+  - name: Configuring Resource Agent internal_vip
+    shell: crm configure primitive internal_vip ocf:heartbeat:IPaddr2 params ip="{{ internal_vip }}" cidr_netmask="24" nic="eth0:0" op monitor interval="10s"
+    when: ansible_hostname == controller01
+    ignore_errors: yes
+    tags: pacemaker_internal_vip
+
+  - name: Configuring Resource Agent public_vip
+    shell: crm configure primitive public_vip ocf:heartbeat:IPaddr2 params ip="{{ public_vip }}" cidr_netmask="24" nic="eth1:0" op monitor interval="10s"
+    when: ansible_hostname == controller01
+    ignore_errors: yes
+    tags: pacemaker_public_vip
+
+  - name: VIPs must be co-located on same node
+    shell: "crm configure colocation Float-VIPs-Together inf: public_vip internal_vip"
+    when: ansible_hostname == controller01
+    ignore_errors: yes
+    tags: crm_vips_colocation

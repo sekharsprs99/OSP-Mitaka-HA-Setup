@@ -1,0 +1,15 @@
+---
+# tasks file for controller-horizon
+  - name: Install openstack-dashboard in controller node
+    apt: name={{ item }} state=present force=yes
+    with_items:
+     - openstack-dashboard
+    tags: horizon
+
+  - name: Configure local_settings.py
+    template: src=local_settings.py.j2 dest=/etc/openstack-dashboard/local_settings.py
+    tags: local-settings-py, settings
+
+  - name: Restart Apache2
+    service: name=apache2 state=reloaded
+    tags: horizon-apache2-restart, settings

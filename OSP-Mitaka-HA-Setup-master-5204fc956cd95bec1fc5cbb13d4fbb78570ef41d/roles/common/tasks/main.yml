@@ -1,0 +1,101 @@
+---
+#Updating Hosts file for Name Resolution
+  - name: Apt Update
+    apt: update_cache=yes
+
+  - name: Configuring /etc/hosts Entries for Name Resolution
+    template: src=hosts.j2 dest=/etc/hosts
+
+#NTP
+  - name: Install Chrony
+    apt: name=chrony state=present cache_valid_time=1800
+
+  - name: Removing existing ntp details in chrony
+    lineinfile: dest=/etc/chrony/chrony.conf regexp="^server " state=absent
+    when: ansible_hostname != controller01
+
+  - name: Change conf in all nodes except controller01
+    lineinfile: dest=/etc/chrony/chrony.conf line='server {{ controller01 }} iburst'
+    when: ansible_hostname != controller01
+
+  - name: Restart chrony
+    service: name=chrony state=restarted
+
+#Creating OpenStack Repo
+  - name: Enable the OpenStack repository
+    apt: name=software-properties-common state=present
+    tags: mitaka_repo
+
+  - name: apt_repository
+    apt_repository: repo='deb http://ubuntu-cloud.archive.canonical.com/ubuntu trusty-updates/mitaka main'
+                    filename=cloudarchive-mitaka
+                    state=present
+    tags: mitaka_source_list
+
+  - name: Update GPG key for the mitaka on nodes
+    apt_key: keyserver=keyserver.ubuntu.com id=5EDB1B62EC4926EA
+    tags: mitaka_repo
+
+  - name: Upgrade the packages
+    apt: update_cache=yes upgrade=dist force=yes
+    tags: upgrade
+
+  - name: Checking whether kernel updated or not | if kernel version changed need to reboot
+    shell: "if [ $(readlink -f /vmlinuz) != /boot/vmlinuz-$(uname -r) ]; then echo 'reboot'; else echo 'no'; fi"
+    ignore_errors: yes
+    register: kernel_st
+    tags: reb_st
+
+  - name: Rebooting...
+    shell: shutdown -r now "Ansible Kernel Update"
+    async: 0
+    poll: 0
+    ignore_errors: yes
+    when: kernel_st.stdout.find("reboot") != -1
+
+  - name: Paused for servers to reboot
+    pause:
+    when: kernel_st.stdout.find("reboot") != -1
+
+  - name: Install the OpenStack client
+    apt: name=python-openstackclient state=present force=yes
+#
+#  - name: Upgrade the packages
+#    apt: update_cache=yes upgrade=dist force=yes
+#    register: upgrade_st
+#    tags: upgrade
+#
+#  - name: debug upgrade
+#    debug: var=upgrade_st
+#    tags: upgrade
+#
+#  - name: Reboot if required
+#    shell: reboot
+#    when: upgrade_st.stdout.find("0 upgraded") == -1
+#    tags: upgrade
+#
+#  - name: pausing for server to restart, press any key to resume once all restarted nodes are up
+#    pause:
+#    when: upgrade_st.stdout.find("0 upgraded") == -1
+#    tags: upgrade
+#
+#  - name: Check if a reboot is required
+#    stat: path=/var/run/reboot-required
+#    register: reboot
+#
+#  - name: Reboot servers if required
+#    shell: shutdown -r now 'Rebooting to complete system upgrade' removes=/var/run/reboot-required
+#    register: reboot
+#    tags: reb
+#
+#  - debug: var=reboot
+#    tags: reb
+#
+#  - name: wait for server to restart
+#    local_action: wait_for host={{ inventory_hostname }} state=started delay=30 timeout=150
+#    become: false
+#    when: reboot.stderr == ""
+#
+#  - name: pausing for server to restart, press any key to resume once all restarted nodes are up
+#    pause:
+#    when: reboot.stderr == ""

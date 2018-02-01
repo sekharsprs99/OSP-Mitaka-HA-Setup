@@ -1,0 +1,20 @@
+#!/bin/bash
+cmd_openstack=$(which openstack)
+cmd_grep=$(which grep)
+. /root/admin-openrc.sh
+
+ls /var/tmp/cirros-0.3.4-x86_64-disk.img* | grep 'cirros-0.3.4-x86_64-disk.img'
+if [ $? = 0 ]
+then
+    echo "cirros image already available"
+else
+    wget http://download.cirros-cloud.net/0.3.4/cirros-0.3.4-x86_64-disk.img
+fi
+
+$cmd_openstack image list | $cmd_grep cirros
+if [ $? = 0 ]
+then
+    echo "cirros image already available"
+else
+    openstack image create "cirros" --file /var/tmp/cirros-0.3.4-x86_64-disk.img --disk-format qcow2 --container-format bare --public
+fi

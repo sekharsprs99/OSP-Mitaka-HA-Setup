@@ -1,0 +1,14 @@
+#!/bin/bash
+cmd_neutron=$(which neutron)
+cmd_grep=$(which grep)
+
+# Create the self-service network
+. /root/demo-openrc.sh
+$cmd_neutron net-list | $cmd_grep selfservice
+if [ $? = 0 ]
+then
+    echo "selfservice network already available"
+else
+    neutron net-create selfservice
+fi
+neutron subnet-create --name selfservice --dns-nameserver 8.8.4.4 --gateway 172.16.1.1 selfservice 172.16.1.0/24

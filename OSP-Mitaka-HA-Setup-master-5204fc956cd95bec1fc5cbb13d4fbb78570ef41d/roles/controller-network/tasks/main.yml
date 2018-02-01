@@ -1,0 +1,25 @@
+---
+# tasks file for controller-network
+  - name: create self-service network
+    template: src=selfservice.sh.j2 dest=/var/tmp/selfservice.sh
+
+  - shell: bash /var/tmp/selfservice.sh
+    when: ansible_eth1.ipv4.address == "{{ controller01_eth1 }}"
+
+  - name: create createroute
+    template: src=createroute.sh.j2 dest=/var/tmp/createroute.sh
+
+  - shell: bash /var/tmp/createroute.sh
+    when: ansible_eth1.ipv4.address == "{{ controller01_eth1 }}"
+
+  - name: generate generatekey
+    template: src=generatekey.sh.j2 dest=/var/tmp/generatekey.sh
+
+  - shell: bash /var/tmp/generatekey.sh
+    when: ansible_eth1.ipv4.address == "{{ controller01_eth1 }}"
+
+  - name: Add security group rules
+    template: src=securitygrouprules.sh.j2 dest=/var/tmp/securitygrouprules.sh
+
+  - shell: bash /var/tmp/securitygrouprules.sh
+    when: ansible_eth1.ipv4.address == "{{ controller01_eth1 }}"

@@ -1,0 +1,16 @@
+[mitaka:children]
+controller_nodes
+compute_nodes
+
+[mitaka:vars]
+ansible_user=root
+ansible_pass=" "
+ansible_sudo_pass=" "
+
+[controller_nodes]
+controller01  ansible_host=10.10.10.10
+controller02  ansible_host=10.10.10.20
+controller03  ansible_host=10.10.10.30
+
+[compute_nodes]
+compute01 ansible_host=10.10.10.40

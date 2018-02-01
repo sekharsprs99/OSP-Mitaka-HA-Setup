@@ -1,0 +1,109 @@
+---
+#HostNames
+#controller_nodes
+controller01: "{{ hostvars[groups['controller_nodes'][0]]['ansible_hostname'] }}"
+controller02: "{{ hostvars[groups['controller_nodes'][1]]['ansible_hostname'] }}"
+controller03: "{{ hostvars[groups['controller_nodes'][2]]['ansible_hostname'] }}"
+
+#compute_nodes
+compute01: "{{ hostvars[groups['compute_nodes'][0]]['ansible_hostname'] }}"
+
+#NICs
+mgmt_iface: eth0
+public_iface: eth1
+
+#IPs
+  #Management IPs
+controller01_eth0: "{{ hostvars[groups['controller_nodes'][0]]['ansible_' + mgmt_iface ]['ipv4']['address'] }}"
+controller02_eth0: "{{ hostvars[groups['controller_nodes'][1]]['ansible_' + mgmt_iface ]['ipv4']['address'] }}"
+controller03_eth0: "{{ hostvars[groups['controller_nodes'][2]]['ansible_' + mgmt_iface ]['ipv4']['address'] }}"
+compute01_eth0: "{{ hostvars[groups['compute_nodes'][0]]['ansible_' + mgmt_iface ]['ipv4']['address'] }}"
+
+  #Public IPs
+controller01_eth1: "{{ hostvars[groups['controller_nodes'][0]]['ansible_' + public_iface ]['ipv4']['address'] }}"
+controller02_eth1: "{{ hostvars[groups['controller_nodes'][1]]['ansible_' + public_iface ]['ipv4']['address'] }}"
+controller03_eth1: "{{ hostvars[groups['controller_nodes'][2]]['ansible_' + public_iface ]['ipv4']['address'] }}"
+compute01_eth1: "{{ hostvars[groups['compute_nodes'][0]]['ansible_' + public_iface ]['ipv4']['address'] }}"
+
+  #Virtual IPs
+internal_vip: 10.10.10.100
+internal_vip_fqdn: internalvip
+public_vip: 10.10.11.100
+public_vip_fqdn: publicvip
+
+  #Port Numbers
+#DEFAULT
+default_mysql_port: 3306
+default_rabbitmq_port: 5672
+default_apache_port: 80
+default_keystone_admin_port: 35357
+default_keystone_public_port: 5000
+default_memcached_port: 11211
+default_glance_api_port: 9292
+default_registry_port: 9191
+default_metadata_listen_port: 8775
+default_osapi_compute_listen_port: 8774
+default_nova_ec2_api_port: 8773
+default_novnvproxy_port: 6080
+default_neutron_port: 9696
+default_cinder_port: 8776
+default_cinder_port: 8776
+default_ceilometer_port: 8777
+default_swift_port: 8080
+
+#CustomPortNumbers
+#MySQL
+mysql_port: 3206
+
+#RabbitMQ
+rabbitmq_port: 5572
+
+#Apache
+apache_port: 8080
+
+#Keystone
+keystone_admin_port: 35356
+keystone_public_port: 5001
+
+#Memcached
+memcached_port: 11111
+
+#Glance
+glance_api_port: 9291
+glance_registry_port: 9192
+
+#Nova
+metadata_listen_port: 8675
+osapi_compute_listen_port: 8674
+nova_ec2_api_listen_port: 8673
+novncproxy_port: 6980
+
+#Neutron
+neutron_port: 9596
+
+#Cinder
+cinder_port: 8676
+
+#Ceilometer
+ceilometer_port: 8677
+
+#Swift
+swift_port: 8980
+
+#Keys
+mysql_root_password: "s3cret"
+mysql_sstuser_password: "s3cretPass"
+rabbit_pass: pass
+os_url: http://{{ internal_vip_fqdn }}:{{ default_keystone_admin_port }}/v3
+keystone_dbpass: pass
+admin_user_pass: pass
+demo_user_pass: pass
+glance_dbpass: pass
+glance_user_pass: pass
+nova_dbpass: pass
+nova_user_pass: pass
+neutron_dbpass: pass
+neutron_user_pass: pass
+cinder_dbpass: pass
+cinder_user_pass: pass
+metadata_pass: pass

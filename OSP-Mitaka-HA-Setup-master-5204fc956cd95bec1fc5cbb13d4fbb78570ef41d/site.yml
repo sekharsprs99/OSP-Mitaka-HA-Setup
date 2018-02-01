@@ -1,0 +1,18 @@
+---
+- name: Mitaka Installation
+  hosts: mitaka
+  become: true
+  roles:
+    - { role: common, tags: common }
+    - { role: controller-pacemaker, when: "'controller' in inventory_hostname", tags: controller-pacemaker }
+    - { role: controller-haproxy, when: "'controller' in inventory_hostname", tags: controller-haproxy }
+    - { role: controller-percona, when: "'controller' in inventory_hostname", tags: controller-percona }
+    - { role: controller-rabbitmq, when: "'controller' in inventory_hostname", tags: controller-rabbitmq }
+    - { role: controller-memcached, when: "'controller' in inventory_hostname", tags: controller-memcached }
+    - { role: controller-keystone, when: "'controller' in inventory_hostname", tags: controller-keystone }
+    - { role: controller-glance, when: "'controller' in inventory_hostname", tags: controller-glance }
+    - { role: controller-nova, when: "'controller' in inventory_hostname", tags: controller-nova }
+    - { role: compute-nova, when: "'compute' in inventory_hostname", tags: compute-nova }
+    - { role: controller-neutron, when: "'controller' in inventory_hostname", tags: controller-neutron }
+    - { role: compute-neutron, when: "'compute' in inventory_hostname", tags: compute-neutron }
+    - { role: controller-horizon, when: "'controller' in inventory_hostname", tags: controller-horizon }

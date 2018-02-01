@@ -1,0 +1,16 @@
+--------------------------------------------------------------------------------------------------------
+Apache
+root@controller02:~# service apache2 restart
+ * Restarting web server apache2
+(98)Address already in use: AH00072: make_sock: could not bind to address [::]:5000
+(98)Address already in use: AH00072: make_sock: could not bind to address 0.0.0.0:5000
+no listening sockets available, shutting down
+AH00015: Unable to open logs
+Action 'start' failed.
+The Apache error log may have more information.
+                                                                                           [fail]
+ * The apache2 instance did not start within 20 seconds. Please read the log files to discover problems
+RESOLVED: Keystone is in running state
+--------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------

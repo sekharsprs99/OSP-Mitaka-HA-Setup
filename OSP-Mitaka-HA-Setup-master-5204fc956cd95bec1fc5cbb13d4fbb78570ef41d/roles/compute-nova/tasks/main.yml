@@ -1,0 +1,63 @@
+---
+# tasks file for compute-nova
+  - name: Install nova-compute on "compute" node
+    apt: name=nova-compute state=present force=yes
+    tags: compute-package
+
+  - name: Configuring components of Compute Nova on Compute Nodes
+    ini_file: dest=/etc/nova/nova.conf
+              section="{{ item.section }}"
+              option="{{ item.option }}"
+              value="{{ item.value }}"
+    with_items:
+      - { section: 'DEFAULT', option: 'rpc_backend', value: 'rabbit' }
+      - { section: 'DEFAULT', option: 'auth_strategy', value: 'keystone' }
+      - { section: 'DEFAULT', option: 'my_ip', value: "{{ hostvars[inventory_hostname]['ansible_'+ mgmt_iface ]['ipv4']['address'] }}" }
+      - { section: 'DEFAULT', option: 'use_neutron', value: 'True' }
+      - { section: 'DEFAULT', option: 'firewall_driver', value: "nova.virt.firewall.NoopFirewallDriver" }
+      - { section: 'DEFAULT', option: 'osapi_compute_listen_port', value: "{{ osapi_compute_listen_port }}" }
+      - { section: 'DEFAULT', option: 'metadata_listen_port', value: "{{ metadata_listen_port }}" }
+      - { section: 'DEFAULT', option: 'ec2_listen_port', value: "{{ ec2_listen_port }}" }
+      - { section: 'oslo_messaging_rabbit', option: 'rabbit_hosts', value: "{% for host in groups['controller_nodes'] %}{{ hostvars[host]['ansible_fqdn' ] }}:5672{% if not loop.last %},{% endif %}{% endfor %}" }
+      - { section: 'oslo_messaging_rabbit', option: 'rabbit_retry_interval', value: '1' }
+      - { section: 'oslo_messaging_rabbit', option: 'rabbit_retry_backoff', value: '2' }
+      - { section: 'oslo_messaging_rabbit', option: 'rabbit_max_retries', value: '0' }
+      - { section: 'oslo_messaging_rabbit', option: 'rabbit_durable_queues', value: 'true' }
+      - { section: 'oslo_messaging_rabbit', option: 'rabbit_ha_queues', value: 'true' }
+      - { section: 'oslo_messaging_rabbit', option: 'rabbit_userid', value: 'openstack' }
+      - { section: 'oslo_messaging_rabbit', option: 'rabbit_password', value: "{{ rabbit_pass }}" }
+      - { section: 'keystone_authtoken', option: 'auth_uri', value: "http://{{ public_vip_fqdn }}:{{ keystone_public_port }}" }
+      - { section: 'keystone_authtoken', option: 'auth_url', value: "http://{{ internal_vip_fqdn }}:{{ keystone_admin_port }}" }
+      - { section: 'keystone_authtoken', option: 'memcached_servers', value: "{% for host in groups['controller_nodes'] %}{{ hostvars[host]['ansible_fqdn' ] }}:{{ memcached_port }}{% if not loop.last %},{% endif %}{% endfor %}" }
+      - { section: 'keystone_authtoken', option: 'auth_type', value: 'password' }
+      - { section: 'keystone_authtoken', option: 'project_domain_name', value: 'default' }
+      - { section: 'keystone_authtoken', option: 'user_domain_name', value: 'default' }
+      - { section: 'keystone_authtoken', option: 'project_name', value: 'service' }
+      - { section: 'keystone_authtoken', option: 'username', value: 'nova' }
+      - { section: 'keystone_authtoken', option: 'password', value: "{{ nova_user_pass }}" }
+      - { section: 'vnc', option: 'enabled', value: 'True' }
+      - { section: 'vnc', option: 'vncserver_listen', value: "0.0.0.0" }
+      - { section: 'vnc', option: 'novncproxy_port', value: "{{ novncproxy_port }}" }
+      - { section: 'vnc', option: 'vncserver_proxyclient_address', value: "$my_ip" }
+      - { section: 'vnc', option: 'novncproxy_base_url', value: "http://{{ internal_vip_fqdn }}:6080/vnc_auto.html" }
+      - { section: 'glance', option: 'api_servers', value: "http://{{ internal_vip_fqdn }}:{{ glance_api_port }}" }
+      - { section: 'oslo_concurrency', option: 'lock_path', value: "/var/lib/nova/tmp" }
+    tags: compute-conf
+
+  - name: Configure libvirt section in nova-compute.conf
+    ini_file: dest=/etc/nova/nova-compute.conf
+              section=libvirt
+              option=virt_type
+              value=qemu
+
+  - name: Configure auth_host section in /etc/nova/api-paste.ini
+    ini_file: dest=/etc/nova/api-paste.ini
+              section=filter:authtoken
+              option=auth_host
+              value={{ internal_vip_fqdn }}
+
+  - name: Restart Nova-Compute
+    service: name=nova-compute state=restarted
+
+  - name: Remove /var/lib/nova/nova.sqlite
+    file: path=/var/lib/nova/nova.sqlite state=absent

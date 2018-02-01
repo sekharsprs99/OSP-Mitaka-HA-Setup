@@ -1,0 +1,159 @@
+---
+# tasks file for controller-keystone
+  - name: Create database for keystone
+    mysql_db: login_user=root login_password="{{ mysql_root_password }}" name=keystone state=present
+    when: ansible_hostname == controller01
+    tags: keystone-db
+
+  - name: Create keystone user and grant privileges to keystone database.
+    mysql_user: login_user=root login_password="{{ mysql_root_password }}" name=keystone password={{ keystone_dbpass }} priv=*.*:ALL state=present host={{ item }}
+    with_items:
+     - "{{ controller01 }}"
+     - "{{ controller02 }}"
+     - "{{ controller03 }}"
+     - "{{ compute01 }}"
+     - "{{ internal_vip }}"
+     - "{{ internal_vip_fqdn }}"
+     - "{{ public_vip_fqdn }}"
+     - "{{ public_vip }}"
+     - localhost
+     - "%"
+    when: ansible_hostname == controller01
+    tags: keystone-db-priv
+
+  - name: Install keystone apache2 libapache2-mod-wsgi packages on controllers
+    apt: name={{ item }} state=present force=yes
+    with_items:
+     - keystone
+     - apache2
+     - libapache2-mod-wsgi
+     - python-mysqldb
+     - python-pymysql
+     - python-pip
+    tags: keystone-packages
+
+  - name: Pip install pbr=0.9 | using python-pip
+    pip: name=pbr version=0.9
+    tags: pbr
+
+  - name: Changing apache2 default port
+    replace: dest={{ item.file }} regexp={{ item.regexp }} replace={{ item.replace}}
+    with_items:
+      - { file: '/etc/apache2/ports.conf', regexp: "^(Listen 80)$", replace: "Listen {{ apache_port }}" }
+      - { file: '/etc/apache2/sites-enabled/000-default.conf', regexp: '^<VirtualHost \*:80>' , replace: "<VirtualHost *:{{ apache_port }}>" }
+    tags: apache2-port-change
+
+  - name: update ServerName Apache Conf
+    lineinfile: dest=/etc/apache2/apache2.conf line='ServerName {{ hostvars[inventory_hostname]['ansible_hostname'] }}'
+    tags: keystone-apache-servername
+
+  - name: Checking Administration Token
+    stat: path=/root/ADMIN_token
+    register: admin_token
+    tags: keystone-admin-token-check
+
+  - name: Creating Administration Token
+    shell: /usr/bin/openssl rand -hex 10 > ADMIN_token
+    when:
+      - admin_token.stat.exists != True
+      - ansible_hostname == controller01
+    tags: keystone-admin-token-creation
+
+  - name: Make Sure All controller nodes have same same keystone admin_token
+    synchronize: src=/root/ADMIN_token dest=/root/ADMIN_token
+    delegate_to: "{{ controller01_eth0 }}"
+    tags: keystone-admin-token-cp
+
+  - name: admin token register
+    command: cat /root/ADMIN_token
+    register: ADMIN_TOKEN
+    when: ansible_hostname != compute01
+    tags: keystone-admin-token-reg
+
+  - name: disable keystone auto start service
+    lineinfile: dest=/etc/init/keystone.override line=manual create=yes
+    tags: keystone-disable-auto
+
+  - name: Stop keystone service
+    service: name=keystone state=stopped
+    tags: keystone-stop
+
+  - name: Install and configure components in keystone.conf in Controllers
+    ini_file: dest=/etc/keystone/keystone.conf
+              section="{{ item.section }}"
+              option="{{ item.option }}"
+              value="{{ item.value }}"
+              backup=yes
+    with_items:
+      - { section: 'DEFAULT', option: 'admin_token', value: "{{ ADMIN_TOKEN.stdout }}" }
+      - { section: 'DEFAULT', option: 'public_port', value: '{{ keystone_public_port }}' }
+      - { section: 'DEFAULT', option: 'admin_port', value: '{{ keystone_admin_port }}' }
+#      - { section: 'database', option: 'connection', value: "mysql+pymysql://keystone:{{ keystone_dbpass }}@{{ hostvars[inventory_hostname]['ansible_fqdn'] }}/keystone" }
+      - { section: 'database', option: 'connection', value: "mysql+pymysql://keystone:{{ keystone_dbpass }}@{{ internal_vip_fqdn }}/keystone" }
+      - { section: 'catalog',  option: 'driver', value: "keystone.catalog.backends.sql.Catalog" }
+      - { section: 'eventlet_server', option: 'bind_host', value: "{{ hostvars[inventory_hostname]['ansible_'+ mgmt_iface ]['ipv4']['address'] }}" }
+      - { section: 'eventlet_server', option: 'public_bind_host', value: "{{ hostvars[inventory_hostname]['ansible_'+ public_iface ]['ipv4']['address'] }}" }
+      - { section: 'eventlet_server', option: 'admin_bind_host', value: "{{ hostvars[inventory_hostname]['ansible_'+ mgmt_iface ]['ipv4']['address'] }}" }
+      - { section: 'identity',  option: 'driver', value: "keystone.identity.backends.sql.Identity" }
+      - { section: 'token',  option: 'provider', value: 'fernet' }
+    ignore_errors: yes
+    tags: keystone-conf
+
+  - name: Populate the Identity service database in controller01
+    command: /bin/sh -c "keystone-manage db_sync" keystone
+    when: ansible_hostname == controller01
+    tags: keystone-db-sync
+
+  - name: Populate the Identity service database in Controller02_&_03
+    command: /bin/sh -c "keystone-manage db_sync" keystone
+    when: ansible_hostname != controller01
+    tags: keystone-db-sync
+
+  - name: Initialize Fernet keys
+    shell: keystone-manage fernet_setup --keystone-user keystone --keystone-group keystone
+    tags: keystone-fernet
+
+  - name: Update /etc/apache2/sites-available/wsgi-keystone.conf
+    copy: src=wsgi-keystone.conf dest=/etc/apache2/sites-available/wsgi-keystone.conf
+    tags: keystone-wsgi
+
+  - name: Enable the Identity service virtual hosts
+    file: src=/etc/apache2/sites-available/wsgi-keystone.conf dest=/etc/apache2/sites-enabled/wsgi-keystone.conf state=link
+    tags: enable-keystone-identity
+
+  - name: Restart Apache2
+    service: name=apache2 state=restarted
+    tags: apache-restart
+
+  - name: Remove /var/lib/keystone/keystone.db
+    file: path=/var/lib/keystone/keystone.db state=absent
+    tags: keystone-db-rm
+
+  - name: Create admin-openrc.sh file
+    template: src=admin-openrc.sh.j2 dest=/root/admin-openrc.sh
+    tags: admin-openrc
+
+  - name: Create demo-openrc.sh file
+    template: src=demo-openrc.sh.j2 dest=/root/demo-openrc.sh
+    tags: demo-openrc
+
+  - name: Copying all tenants, users, roles, services and endpoints creation script
+    template: src=keystone-all.sh.j2 dest=/var/tmp/keystone-all.sh
+    when: ansible_hostname == controller01
+    tags: keystone-sh
+
+  - name: All OpenStack Services Endpoints and Entities creation
+    command: bash /var/tmp/keystone-all.sh
+    when: ansible_hostname == controller01
+    ignore_errors: yes
+    tags: keystone-sh
+
+  - name: Apache Resource Agent
+    shell: "{{ item }}"
+    with_items:
+      - crm configure primitive p_apache ocf:heartbeat:apache params configfile=/etc/apache2/apache2.conf statusurl="http://127.0.0.1:{{ apache_port }}/server-status" op monitor interval=1min
+      - crm configure clone p_apache-clone p_apache
+#      - "crm configure colocation Float-Apache inf: p_apache internal_vip"
+    when: ansible_hostname == controller01
+    ignore_errors: yes
+    tags: keystone-ra

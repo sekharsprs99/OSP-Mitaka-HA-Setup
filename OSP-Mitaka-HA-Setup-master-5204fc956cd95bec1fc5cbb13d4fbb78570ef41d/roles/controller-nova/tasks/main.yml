@@ -1,0 +1,167 @@
+---
+# tasks file for controller-nova
+  - name: Create databases nova_api and nova on controller nodes
+    mysql_db: login_user=root login_password="{{ mysql_root_password }}" name={{ item }}  state=present
+    with_items:
+     - nova_api
+     - nova
+    when: ansible_hostname == controller01
+    tags: nova-db
+
+  - name: Create nova user and grant privileges to nova_api database.
+    mysql_user: login_user=root login_password="{{ mysql_root_password }}" name=nova_api password={{ nova_dbpass }} priv=*.*:ALL state=present host={{ item }}
+    with_items:
+     - "{{ controller01 }}"
+     - "{{ controller01_eth0 }}"
+     - "{{ controller01_eth1 }}"
+     - "{{ controller02 }}"
+     - "{{ controller02_eth0 }}"
+     - "{{ controller02_eth1 }}"
+     - "{{ controller03 }}"
+     - "{{ controller03_eth0 }}"
+     - "{{ controller03_eth1 }}"
+     - "{{ compute01 }}"
+     - "{{ compute01_eth0 }}"
+     - "{{ compute01_eth1 }}"
+     - "{{ internal_vip }}"
+     - "{{ internal_vip_fqdn }}"
+     - "{{ public_vip_fqdn }}"
+     - "{{ public_vip }}"
+     - 127.0.0.1
+     - localhost
+     - ::1
+    when: ansible_hostname == controller01
+    tags: nova-db
+
+  - name: Create nova user and grant privileges to nova_api database.
+    mysql_user: login_user=root login_password="{{ mysql_root_password }}" name=nova password={{ nova_dbpass }} priv=*.*:ALL state=present host={{ item }}
+    with_items:
+     - "{{ controller01 }}"
+     - "{{ controller01_eth0 }}"
+     - "{{ controller01_eth1 }}"
+     - "{{ controller02 }}"
+     - "{{ controller02_eth0 }}"
+     - "{{ controller02_eth1 }}"
+     - "{{ controller03 }}"
+     - "{{ controller03_eth0 }}"
+     - "{{ controller03_eth1 }}"
+     - "{{ compute01 }}"
+     - "{{ compute01_eth0 }}"
+     - "{{ compute01_eth1 }}"
+     - "{{ internal_vip }}"
+     - "{{ internal_vip_fqdn }}"
+     - "{{ public_vip_fqdn }}"
+     - "{{ public_vip }}"
+     - 127.0.0.1
+     - localhost
+     - ::1
+    when: ansible_hostname == controller01
+    tags: nova-db
+
+  - name: Install nova-api nova-conductor nova-consoleauth nova-novncproxy nova-scheduler on "controller" nodes
+    apt: name={{ item }} state=present force=yes
+    with_items:
+     - nova-api
+     - nova-conductor
+     - nova-consoleauth
+     - nova-novncproxy
+     - nova-scheduler
+    tags: nova-packages
+
+  - name: Removing deprecated deprecated options
+    ini_file: dest=/etc/nova/nova.conf
+              section="{{ item.section }}"
+              option="{{ item.option }}"
+              state="{{ item.state }}"
+    with_items:
+      - { section: 'DEFAULT', option: 'logdir', state: 'absent' }
+      - { section: 'DEFAULT', option: 'verbose', state: 'absent' }
+    tags: nova-conf-dep
+
+  - name: Configuring components of Nova on Controller Nodes
+    ini_file: dest=/etc/nova/nova.conf
+              section="{{ item.section }}"
+              option="{{ item.option }}"
+              value="{{ item.value }}"
+              backup=yes
+    with_items:
+      - { section: 'DEFAULT', option: 'log-dir', value: "/var/log/nova" }
+      - { section: 'DEFAULT', option: 'enabled_apis', value: 'osapi_compute,metadata' }
+      - { section: 'DEFAULT', option: 'rpc_backend', value: 'rabbit' }
+      - { section: 'DEFAULT', option: 'auth_strategy', value: 'keystone' }
+      - { section: 'DEFAULT', option: 'my_ip', value: "{{ hostvars[inventory_hostname]['ansible_'+ mgmt_iface ]['ipv4']['address'] }}" }
+      - { section: 'DEFAULT', option: 'use_neutron', value: 'True' }
+      - { section: 'DEFAULT', option: 'firewall_driver', value: "nova.virt.firewall.NoopFirewallDriver" }
+#      - { section: 'DEFAULT', option: 'osapi_compute_listen', value: "0.0.0.0" }
+      - { section: 'DEFAULT', option: 'osapi_compute_listen_port', value: "{{ osapi_compute_listen_port }}" }
+      - { section: 'DEFAULT', option: 'metadata_listen_port', value: "{{ metadata_listen_port }}" }
+      - { section: 'DEFAULT', option: 'ec2_listen_port', value: "{{ ec2_listen_port }}" }
+      - { section: 'api_database', option: 'connection', value: "mysql+pymysql://nova:{{ nova_dbpass }}@{{ internal_vip_fqdn }}/nova_api" }
+      - { section: 'database', option: 'connection', value: "mysql+pymysql://nova:{{ nova_dbpass }}@{{ internal_vip_fqdn }}/nova" }
+      - { section: 'oslo_messaging_rabbit', option: 'rabbit_hosts', value: "{% for host in groups['controller_nodes'] %}{{ hostvars[host]['ansible_fqdn' ] }}:5672{% if not loop.last %},{% endif %}{% endfor %}" }
+#      - { section: 'oslo_messaging_rabbit', option: 'rabbit_host', value: "{{ hostvars[inventory_hostname]['ansible_'+ mgmt_iface ]['ipv4']['address'] }}" }
+      - { section: 'oslo_messaging_rabbit', option: 'rabbit_retry_interval', value: '1' }
+      - { section: 'oslo_messaging_rabbit', option: 'rabbit_retry_backoff', value: '2' }
+      - { section: 'oslo_messaging_rabbit', option: 'rabbit_max_retries', value: '0' }
+      - { section: 'oslo_messaging_rabbit', option: 'rabbit_durable_queues', value: 'true' }
+      - { section: 'oslo_messaging_rabbit', option: 'rabbit_ha_queues', value: 'true' }
+      - { section: 'oslo_messaging_rabbit', option: 'rabbit_userid', value: 'openstack' }
+      - { section: 'oslo_messaging_rabbit', option: 'rabbit_password', value: "{{ rabbit_pass }}" }
+      - { section: 'keystone_authtoken', option: 'auth_uri', value: "http://{{ public_vip_fqdn }}:5000" }
+      - { section: 'keystone_authtoken', option: 'auth_url', value: "http://{{ internal_vip_fqdn }}:35357" }
+      - { section: 'keystone_authtoken', option: 'memcached_servers', value: "{% for host in groups['controller_nodes'] %}{{ hostvars[host]['ansible_fqdn' ] }}:{{ memcached_port }}{% if not loop.last %},{% endif %}{% endfor %}" }
+      - { section: 'keystone_authtoken', option: 'auth_type', value: 'password' }
+      - { section: 'keystone_authtoken', option: 'project_domain_name', value: 'default' }
+      - { section: 'keystone_authtoken', option: 'user_domain_name', value: 'default' }
+      - { section: 'keystone_authtoken', option: 'project_name', value: 'service' }
+      - { section: 'keystone_authtoken', option: 'username', value: 'nova' }
+      - { section: 'keystone_authtoken', option: 'password', value: "{{ nova_user_pass }}" }
+      - { section: 'vnc', option: 'vncserver_listen', value: "$my_ip" }
+      - { section: 'vnc', option: 'novncproxy_port', value: "{{ novncproxy_port }}" }
+      - { section: 'vnc', option: 'vncserver_proxyclient_address', value: "$my_ip" }
+      - { section: 'glance', option: 'api_servers', value: "http://{{ internal_vip_fqdn }}:9292" }
+      - { section: 'oslo_concurrency', option: 'lock_path', value: "/var/lib/nova/tmp" }
+    tags: nova-conf
+
+  - name: Populate the Compute db sync database in controller01 node
+    shell: "{{ item }}"
+    with_items:
+      - /bin/sh -c "nova-manage api_db sync" nova
+      - /bin/sh -c "nova-manage db sync" nova
+    when: ansible_hostname == controller01
+    tags: nova-db-pop
+
+  - name: Populate the Compute db sync database on controller02&03 nodes
+    shell: "{{ item }}"
+    with_items:
+      - /bin/sh -c "nova-manage api_db sync" nova
+      - /bin/sh -c "nova-manage db sync" nova
+    when: ansible_hostname != controller01
+    tags: nova-db-pop
+
+  - name: Restart Services | Nova-Api, Nova-Consoleauth, Nova-Scheduler, Nova-Conductor, Nova-Novncproxy
+    service: name={{ item }} state=restarted
+    with_items:
+      - nova-api
+      - nova-consoleauth
+      - nova-scheduler
+      - nova-conductor
+      - nova-novncproxy
+    tags: nova-restart
+
+  - name: Remove /var/lib/nova/nova.sqlite
+    file: path=/var/lib/nova/nova.sqlite state=absent
+    tags: nova-sqlite-rm
+
+  - name: Creating Resource Agents for Nova Cert
+    shell: crm configure primitive p_nova-{{ item.name }} ocf:openstack:nova-{{ item.service }} \
+           params config="/etc/nova/nova.conf" \
+           op monitor interval="5s" timeout="10s"
+    with_items:
+      - { name: 'api', service: 'api' }
+      - { name: 'consoleauth', service: 'consoleauth' }
+      - { name: 'scheduler', service: 'scheduler' }
+      - { name: 'novnc', service: 'novnc' }
+    when: ansible_hostname == controller01
+    ignore_errors: yes
+    tags: pcmk-nova-ra

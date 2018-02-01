@@ -1,0 +1,117 @@
+---
+# tasks file for controller-rabbitmq
+  - name: apt_repository
+    apt_repository: repo='deb http://www.rabbitmq.com/debian/ testing main'
+                    filename=rabbitmq
+                    state=present
+    tags: rbmq-source-list
+
+  - name: add rabbitmq public key to trusted key list
+    apt_key: url=https://www.rabbitmq.com/rabbitmq-release-signing-key.asc state=present
+    tags: rbmq-pub-key
+
+  - name: Install rabbitmq-server in controller nodes
+    apt: name=rabbitmq-server state=present force=yes update_cache=yes
+    tags: rbmq-package
+
+  - name: Checking whether rabbitmq config exists or not
+    stat: path=/etc/rabbitmq/rabbitmq.config
+    register: rbmq_conf
+    tags: rbmq-config-stat
+
+  - name: Extracting Rabbitmq default config file
+    shell: gunzip -c /usr/share/doc/rabbitmq-server/rabbitmq.config.example.gz > /etc/rabbitmq/rabbitmq.config
+    when: rbmq_conf.stat.exists != True
+    tags: rbmq-config-gen
+
+  - name: Changing RabbitMQ default port
+    replace: dest=/etc/rabbitmq/rabbitmq.config
+                regexp="\%\% \{tcp_listeners\, \[\{\"127\.0\.0\.1\"\, 5672\}\,"
+                replace="{tcp_listeners, [{"{{ hostvars[inventory_hostname]['ansible_'+ mgmt_iface ]['ipv4']['address'] }}", {{ rabbitmq_port }}}]}"
+                validate='service rabbitmq-server restart %s'
+    tags: rbmq-port
+
+  - name: Restart RabbitMQ Service on All Controller Nodes
+    service: name=rabbitmq-server state=restarted
+    tags: rbmq-restart
+
+  - name: Stop RabbitMQ Service on All Controller Nodes
+    service: name=rabbitmq-server state=stopped
+    tags: rbmq-stop
+
+  - name: Delete Existing erlang cookie on Controller2&3
+    file: dest=/var/lib/rabbitmq/.erlang.cookie state=absent
+    when: ansible_hostname != controller01
+    tags: rbmq-cookie-del
+
+  - name: Make Sure All controller nodes have same Erlang.cookie
+    synchronize: src=/var/lib/rabbitmq/.erlang.cookie dest=/var/lib/rabbitmq/.erlang.cookie perms=yes
+    delegate_to: "{{ controller01_eth0 }}"
+    tags: rbmq-cookie-cp
+
+  - name: Start Rabbitmq
+    service: name=rabbitmq-server state=started
+    tags: rbmq-start
+
+  - name: Controller02 -> Stop rabbitmq app
+    command: rabbitmqctl stop_app
+    when: ansible_hostname != controller01
+    tags: rbmq-stop-app
+
+  - name: Controller02 -> Join cluster with controller01
+    command: rabbitmqctl join_cluster rabbit@{{ controller01 }}
+    when: ansible_hostname == controller02
+    tags: rbmq-join-cluster
+
+  - name: Controller02 -> Start rabbitmqctl app
+    command: rabbitmqctl start_app
+    when: ansible_hostname == controller02
+    tags: rbmq-start-app
+
+  - name: Controller03 -> Join cluster with Controller02
+    command: rabbitmqctl join_cluster rabbit@{{ controller02 }}
+    when: ansible_hostname == controller03
+    tags: rbmq-join-cluster1
+
+  - name: Controller03 -> Start rabbitmqctl app
+    command: rabbitmqctl start_app
+    when: ansible_hostname == controller03
+    tags: rbmq-start-app1
+
+  - name: set ha-mode policy
+    rabbitmq_policy: name=ha-all pattern='^(?!amq\.).*' state=present
+    args:
+      tags:
+        "ha-mode": all
+    when: ansible_hostname == controller01
+    tags: rbmq-ha-mode
+
+  - name: Change password for openstack user of rabbitMQ
+    rabbitmq_user: user=openstack
+                   password={{ rabbit_pass }}
+                   vhost=/
+                   configure_priv=.*
+                   read_priv=.*
+                   write_priv=.*
+                   state=present
+    when: ansible_hostname == controller01
+    tags: rmbq-osp-pass
+
+  - name: Register erlang_cookie
+    command: cat /var/lib/rabbitmq/.erlang.cookie
+    register: ERLANG
+    when: ansible_hostname == controller01
+    tags: rmbq-ra
+
+  - name: Create resource agent for RabbitMQ on Controller nodes
+    shell: "{{ item }}"
+    with_items:
+      - crm configure primitive p_rabbitmq-server ocf:rabbitmq:rabbitmq-server-ha params erlang_cookie={{ ERLANG.stdout }} node_port=5672 op monitor interval=30 timeout=60 op monitor interval=27 role=Master timeout=60 op start interval=0 timeout=360 op stop interval=0 timeout=120 op promote interval=0 timeout=120 op demote interval=0 timeout=120 op notify interval=0 timeout=180 meta migration-threshold=10 failure-timeout=30s resource-stickiness=100
+      - "crm configure ms p_rabbitmq-server-master p_rabbitmq-server meta notify=true ordered=false interleave=false master-max=1 master-node-max=1"
+    ignore_errors: yes
+    when: ansible_hostname == controller01
+    tags: rmbq-ra
+
+  - name: Make sure MySql doesn't start on boot
+    service: name=rabbitmq-server enabled=no
+    tags: rabbitmq-boot-disable

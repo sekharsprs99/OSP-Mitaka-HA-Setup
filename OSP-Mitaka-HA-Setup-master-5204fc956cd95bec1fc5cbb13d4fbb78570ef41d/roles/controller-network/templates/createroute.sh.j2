@@ -1,0 +1,8 @@
+#!/bin/bash
+#Create a router
+#. /root/admin-openrc.sh
+#neutron net-update provider --router:external
+. /root/demo-openrc.sh
+neutron router-create router
+neutron router-interface-add router selfservice
+neutron router-gateway-set router provider

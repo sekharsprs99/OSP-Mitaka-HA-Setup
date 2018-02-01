@@ -1,0 +1,43 @@
+---
+# tasks file for controller-haproxy
+  - name: Install haproxy package
+    apt: name=haproxy state=present force=yes
+    tags: haproxy-package
+
+  - name: Enable haproxy service
+    lineinfile: dest=/etc/default/haproxy regexp=^ENABLED line=ENABLED=1
+    tags: haproxy-enable
+
+  - name: Update the sysctl file
+    lineinfile: dest=/etc/sysctl.conf line=net.ipv4.ip_nonlocal_bind=1
+    tags: haproxy-sysctl
+
+  - name: Update Sysctl
+    shell: sysctl -p
+    tags: haproxy-update-sysctl
+
+  - name: Stop haproxy service
+    service: name=haproxy state=stopped
+    tags: haproxy-stop
+
+  - name: Configure haproxy.cfg
+    template: src=haproxy.cfg.j2 dest=/etc/haproxy/haproxy.cfg backup=yes
+    tags: haproxy-conf
+
+  - name: HA Proxy Start
+    service: name=haproxy state=started
+    tags: haproxy-start
+
+  - name: Create resource agent for haproxy on controller node
+    shell: "{{ item }}"
+    with_items:
+      - crm configure primitive haproxy ocf:heartbeat:haproxy op monitor interval=15s
+      - crm configure clone haproxy-clone haproxy
+      - "crm configure colocation FloatIP-haproxy inf: haproxy-clone internal_vip"
+    ignore_errors: yes
+    when: ansible_hostname == controller01
+    tags: haproxy-ra-create
+
+  - name: Make sure HA Proxy doesn't start on boot
+    service: name=haproxy enabled=no
+    tags: haproxy-boot-disable

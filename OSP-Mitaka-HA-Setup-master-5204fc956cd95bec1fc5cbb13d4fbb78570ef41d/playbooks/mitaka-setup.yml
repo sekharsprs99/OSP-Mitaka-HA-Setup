@@ -1,0 +1,16 @@
+---
+ - include: deploy-basic-setup.yml
+ - include: deploy-controller-percona.yml
+ - include: deploy-controller-rabbitmq.yml
+ - include: deploy-controller-memcached.yml
+ - include: deploy-controller-haproxy.yml
+ - include: deploy-controller-pacemaker.yml
+ - include: deploy-controller-keystone.yml
+ - include: deploy-controller-glance.yml
+ - include: deploy-controller-nova.yml
+ - include: deploy-compute-nova.yml
+ - include: deploy-controller-neutron.yml
+ - include: deploy-compute-neutron.yml
+ - include: deploy-controller-horizon.yml
+ - include: deploy-controller-network.yml
+ - include: deploy-controller-cinder.yml

@@ -1,0 +1,39 @@
+---
+controller01: controller1
+controller02: controller2
+controller03: controller3
+compute01: compute1
+controller01_eth0: 10.0.0.120
+controller01_eth1: 10.0.1.120
+controller02_eth0: 10.0.0.121
+controller02_eth1: 10.0.1.121
+controller03_eth0: 10.0.0.122
+controller03_eth1: 10.0.1.122
+#compute01_eth0: 192.168.15.164
+#compute01_eth1: 15.15.15.2
+pacemaker_bindnetaddr: 10.0.1.0
+internal_vip: 10.0.1.130
+internal_vip_fqdn: internal.vip
+public_vip: 10.0.2.130
+pacemaker_bindnetaddr: 10.0.0.0
+internal_vip: 10.0.1.130
+internal_vip_fqdn: internal.vip
+public_vip: 192.168.59.120
+public_vip_fqdn: public.vip
+
+mysql_root_password: root
+rabbit_pass: pass
+openssl_rand: 1a2b3c4d5e
+os_url: http://{{ internal_vip_fqdn }}:35357/v3
+keystone_dbpass: pass
+admin_user_pass: pass
+demo_user_pass: pass
+glance_dbpass: pass
+glance_user_pass: pass
+nova_dbpass: pass
+nova_user_pass: pass
+neutron_dbpass: pass
+neutron_user_pass: pass
+cinder_dbpass: pass
+cinder_user_pass: pass
+metadata_pass: pass

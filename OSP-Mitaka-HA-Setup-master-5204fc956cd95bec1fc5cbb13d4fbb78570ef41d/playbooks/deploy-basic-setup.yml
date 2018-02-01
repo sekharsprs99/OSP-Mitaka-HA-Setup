@@ -1,0 +1,6 @@
+---
+- hosts: mitaka
+  vars_files:
+    - ../group_vars/all
+  roles:
+    - { role: ../roles/common }
